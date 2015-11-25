@@ -1,9 +1,16 @@
 import vrep # for vrep functions
 import logging
 import colorlog # colors log output
-from enum import Enum # for enumerations (enum from C)
+from enum import IntEnum # for enumerations (with int value) (enum from C)
 #import ctypes
 import time # for time.sleep()
+
+class SignalType(IntEnum):
+
+    """Enumeration of signal types"""
+    getState = 1
+    setState = 2
+#end class SignalType
 
 class Motion():
 
@@ -79,7 +86,7 @@ class VrepBridge():
         }
 
         """
-        recv = vrep.simxUnpackInts(self.sendSignal([1]))
+        recv = vrep.simxUnpackInts(self.sendSignal([SignalType.getState]))
         logging.debug("Received %s" % recv)
 
         return {'distance' : recv[0], 'light' : recv[1]}
@@ -93,7 +100,7 @@ class VrepBridge():
         :returns: TODO
 
         """
-        recv = self.sendSignal([2, motion] + light)
+        recv = self.sendSignal([SignalType.setState, motion] + light)
         logging.debug("Received %s" % recv)
 
     def close(self):
@@ -121,28 +128,13 @@ formatter = colorlog.ColoredFormatter(
         secondary_log_colors={},
         style='%'
 )
-colorlog.basicConfig(level = logging.DEBUG)
-stream = colorlog.root.handlers[0]
-stream.setFormatter(formatter);
+#colorlog.basicConfig(level = logging.DEBUG)
+#stream = colorlog.root.handlers[0]
+#stream.setFormatter(formatter);
 
+#bridge = VrepBridge()
 
-bridge = VrepBridge()
-
-#bridge.sendSignal([3, 4, 5])
-bridge.getState()
 #bridge.getState()
+#bridge.setState(Motion.forward, [0, 2, 0])
 
-time.sleep(1)
-bridge.setState(Motion.forward, [0, 2, 0])
-bridge.getState()
-time.sleep(1)
-bridge.setState(Motion.left, [2, 0, 0])
-bridge.getState()
-time.sleep(1)
-bridge.setState(Motion.right, [0, 0, 2])
-bridge.getState()
-time.sleep(1)
-bridge.setState(Motion.stop, [1, 1, 1])
-bridge.getState()
-
-bridge.close()
+#bridge.close()
