@@ -1,4 +1,4 @@
-import vrep # for vrep functions
+from vrep_bridge import vrep # for vrep functions
 import logging
 import colorlog # colors log output
 from enum import IntEnum # for enumerations (with int value) (enum from C)
@@ -70,7 +70,6 @@ class VrepBridge():
         
         returnCode = vrep.simxWriteStringStream(self.__clientID, "signal", packedData, vrep.simx_opmode_oneshot) 
         
-        logging.warning("returnCode = %d" % returnCode)
         reply = self.__waitForCmdReply()
         logging.debug("Reply = %s", reply)
 
@@ -114,27 +113,28 @@ class VrepBridge():
 
 ##########################################################################
 #   MAIN
-formatter = colorlog.ColoredFormatter(
-        "%(log_color)s%(levelname)-8s %(message)s %(reset)s",
-        datefmt=None,
-        reset=True,
-        log_colors={
-                'DEBUG':    'cyan',
-                'INFO':     'green',
-                'WARNING':  'yellow',
-                'ERROR':    'red',
-                'CRITICAL': 'red,bg_white',
-        },
-        secondary_log_colors={},
-        style='%'
-)
-#colorlog.basicConfig(level = logging.DEBUG)
-#stream = colorlog.root.handlers[0]
-#stream.setFormatter(formatter);
+if __name__ == "__main__":
+    formatter = colorlog.ColoredFormatter(
+            "%(log_color)s%(levelname)-8s %(message)s %(reset)s",
+            datefmt=None,
+            reset=True,
+            log_colors={
+                    'DEBUG':    'cyan',
+                    'INFO':     'green',
+                    'WARNING':  'yellow',
+                    'ERROR':    'red',
+                    'CRITICAL': 'red,bg_white',
+            },
+            secondary_log_colors={},
+            style='%'
+    )
+    colorlog.basicConfig(level = logging.DEBUG)
+    stream = colorlog.root.handlers[0]
+    stream.setFormatter(formatter);
 
-#bridge = VrepBridge()
+    bridge = VrepBridge()
 
-#bridge.getState()
-#bridge.setState(Motion.forward, [0, 2, 0])
+    bridge.getState()
+    bridge.setState(Motion.forward, [0, 2, 0])
 
-#bridge.close()
+    bridge.close()
