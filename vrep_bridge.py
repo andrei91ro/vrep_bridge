@@ -2,27 +2,108 @@ import vrep # for vrep functions
 import logging
 import colorlog # colors log output
 from enum import Enum # for enumerations (enum from C)
-import ctypes
+#import ctypes
+import time # for time.sleep()
 
-class Signal(Enum):
+class Motion():
 
-    """Enumeration of signal types"""
+    """Enumeration of motion types accepted by Kilobot"""
     
-    # signal names used for requesting values from simulated kilobot
-    msg_distance = 'request_msg_distance'
-    msg_light_sensor = 'request_light_sensor'
+    stop = 0
+    forward = 1
+    left = 2
+    right = 3
+#end class Motion
 
-    # signal name used to set values of simulated kilobots
-    motion = 'set_motion'
-    led = 'set_led'
-#end of class Signal
+class VrepBridge():
 
-def waitForCmdReply():
-    while True:
-        result,string=vrep.simxReadStringStream(clientID, 'reply_signal', vrep.simx_opmode_streaming)
-        string = str(string, 'utf-8')
-        if (result==vrep.simx_return_ok and string != ''):
-            return string
+    """Creates a connection between a Python application and V-REP that allows bidirectional communication"""
+    # signal = type_request param1 param2 param3
+    # reply_signal = type val1 val2 val3
+
+    def __init__(self):
+        """"""
+        logging.info('Attempting to connect')
+
+        vrep.simxFinish(-1) # just in case, close all opened connections
+        self.__clientID = vrep.simxStart('127.0.0.1', 19997, True, True, 5000, 5) # Connect to V-REP
+
+        if (self.__clientID == -1):
+            logging.error('Failed connecting to remote API server')
+            raise()
+
+        logging.info('Connected to remote API server, clientID = %d' % self.__clientID)
+    #end __init__()
+
+    def __waitForCmdReply(self):
+        while True:
+            result,string=vrep.simxReadStringStream(self.__clientID, 'reply_signal', vrep.simx_opmode_streaming)
+            #result,string=vrep.simxGetStringSignal(self.__clientID, 'reply_signal', vrep.simx_opmode_streaming)
+            if (result == vrep.simx_return_ok and len(string) > 0):
+                logging.debug("received %s" % string)
+                return string
+            #string = str(string, 'utf-8')
+            #if (result==vrep.simx_return_ok):
+
+            time.sleep(0.1)
+    #end __waitForCmdReply()
+
+    def sendSignal(self, params):
+        """Function that sends a signal to V-REP
+
+        :params: [] list of values to send
+        :returns: non-empty string value
+
+        """
+
+        #returnCode = vrep.simxWriteStringStream(self.__clientID, 'signal', 'abc', vrep.simx_opmode_oneshot)
+        
+        #packedData=vrep.simxPackInts([1, 2, 3])
+        packedData=vrep.simxPackInts(params)
+        
+        returnCode = vrep.simxWriteStringStream(self.__clientID, "signal", packedData, vrep.simx_opmode_oneshot) 
+        
+        logging.warning("returnCode = %d" % returnCode)
+        reply = self.__waitForCmdReply()
+        logging.debug("Reply = %s", reply)
+
+        return reply
+    #end sendSignal
+
+    def getState(self):
+        """Return the current state of the kilobot, under the form of a structured dictionary
+        :returns: structured dictonary that represents the state of the robot
+        {
+            distance : [(id1, val1), ...]
+            light : (val_now, val_previous)
+        }
+
+        """
+        recv = vrep.simxUnpackInts(self.sendSignal([1]))
+        logging.debug("Received %s" % recv)
+
+        return {'distance' : recv[0], 'light' : recv[1]}
+    #end getState()
+
+    def setState(self, motion, light):
+        """Set a current state for the end-effectors of the Kilobot (Motors and RGB-led)
+
+        :motion: one of Motion(enum) values  
+        :light: [r, g, b] list with values from [0-3] interval
+        :returns: TODO
+
+        """
+        recv = self.sendSignal([2, motion] + light)
+        logging.debug("Received %s" % recv)
+
+    def close(self):
+        """Closes the connection with V-REP """
+
+        # Now close the connection with V-REP:
+        vrep.simxFinish(self.__clientID)
+        logging.info("Connection closed")
+#end class VrepBridge 
+
 
 ##########################################################################
 #   MAIN
@@ -44,20 +125,24 @@ colorlog.basicConfig(level = logging.DEBUG)
 stream = colorlog.root.handlers[0]
 stream.setFormatter(formatter);
 
-logging.info('Attempting to connect')
 
-vrep.simxFinish(-1) # just in case, close all opened connections
-clientID=vrep.simxStart('127.0.0.1', 19997, True, True, 5000, 5) # Connect to V-REP
+bridge = VrepBridge()
 
-if (clientID != -1):
-    logging.info('Connected to remote API server, clientID = %d' % clientID)
-    
-    vrep.simxWriteStringStream(clientID, 'signal', 'abc', vrep.simx_opmode_oneshot)
-    
-    logging.debug("Reply = %s", waitForCmdReply())
-    
-    # Now close the connection to V-REP:
-    vrep.simxFinish(clientID)
+#bridge.sendSignal([3, 4, 5])
+bridge.getState()
+#bridge.getState()
 
-else:
-    logging.error('Failed connecting to remote API server')
+time.sleep(1)
+bridge.setState(Motion.forward, [0, 2, 0])
+bridge.getState()
+time.sleep(1)
+bridge.setState(Motion.left, [2, 0, 0])
+bridge.getState()
+time.sleep(1)
+bridge.setState(Motion.right, [0, 0, 2])
+bridge.getState()
+time.sleep(1)
+bridge.setState(Motion.stop, [1, 1, 1])
+bridge.getState()
+
+bridge.close()
