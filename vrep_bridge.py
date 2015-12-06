@@ -8,6 +8,7 @@ import time # for time.sleep()
 class SignalType(IntEnum):
 
     """Enumeration of signal types"""
+
     getState = 1
     setState = 2
 #end class SignalType
@@ -22,6 +23,21 @@ class Motion():
     right = 3
 #end class Motion
 
+def getClonePosRot_ox_plus(stepNr):
+    """Return a position[3], rotation[3] pair for a linear displacement on the positive X axis of
+    the cloned robots. 
+
+    :stepNr: the current (in the interval [0; n-1], where n = nr robot clones) iteration step in the cloning process of the source robot
+    :returns: position[3] (is applied relative to the source robot's position)
+    :returns: rotation[3] (in Euler angles, applied relative to the clone's axis)
+
+    """
+    position = [(stepNr + 1) * 0.05, 0, 0]
+    rotation = [0, 0, 0]
+
+    return position, rotation
+# end getClonePosRot()
+
 class VrepBridge():
 
     """Creates a connection between a Python application and V-REP that allows bidirectional communication"""
@@ -30,8 +46,8 @@ class VrepBridge():
 
     def __init__(self):
         """"""
+        self.clonedRobotHandles = [] # used to store object handles of copy-pasted robots
         logging.info('Attempting to connect')
-
         vrep.simxFinish(-1) # just in case, close all opened connections
         self.__clientID = vrep.simxStart('127.0.0.1', 19997, True, True, 5000, 5) # Connect to V-REP
 
@@ -68,7 +84,7 @@ class VrepBridge():
         #packedData=vrep.simxPackInts([1, 2, 3])
         packedData=vrep.simxPackInts(params)
         
-        returnCode = vrep.simxWriteStringStream(self.__clientID, "signal", packedData, vrep.simx_opmode_oneshot) 
+        vrep.simxWriteStringStream(self.__clientID, "signal", packedData, vrep.simx_opmode_oneshot) 
         
         reply = self.__waitForCmdReply()
         logging.debug("Reply = %s", reply)
@@ -102,12 +118,49 @@ class VrepBridge():
         recv = self.sendSignal([SignalType.setState, motion] + light)
         logging.debug("Received %s" % recv)
 
+    def spawnRobots(self, sourceRobotName = "Kilobot#", nr = 2, clonePosRotFunction = getClonePosRot_ox_plus):
+        """Spawns nr robots in the current scene by copy-pasting the source robot the required number of times
+        The cloned robots are placed acording to the clonePosRotFunction (see getClonePosRot_ox_plus() for an example)
+
+        :nr: the number of copies requested
+        :sourceRobotName: the complete (with # at the end) robot name
+        :clonePosRotFunction: position[3], rotation[3] function(i) meaning a function that returns a position and rotation vector pair for an i - integer nr
+                                see getClonePosRot_ox_plus() for an example
+        """
+        returnCode, sourceHandle = vrep.simxGetObjectHandle(self.__clientID, sourceRobotName, vrep.simx_opmode_oneshot_wait)
+        logging.debug("Source obj handle = %d" % sourceHandle)
+        
+        logging.info("Spawning %d clones of %s source robot" % (nr, sourceRobotName))
+        for i in range(nr):
+            logging.debug("Spawning robot nr %d" % i)
+            
+            returnCode, auxhandles = vrep.simxCopyPasteObjects(self.__clientID, [sourceHandle], vrep.simx_opmode_oneshot_wait)
+            self.clonedRobotHandles.append(auxhandles[0])
+            logging.debug("copy obj handle = %s" % self.clonedRobotHandles[-1])
+            
+            position, rotation = clonePosRotFunction(i)
+            vrep.simxSetObjectPosition(self.__clientID, self.clonedRobotHandles[-1], sourceHandle, position, vrep.simx_opmode_oneshot_wait)
+            vrep.simxSetObjectOrientation(self.__clientID, self.clonedRobotHandles[-1], sourceHandle, rotation, vrep.simx_opmode_oneshot_wait)
+    # end spawnRobots()
+   
+    def removeRobots(self):
+        """Removes the robots previously created with spawnRobots() from the current V-REP scene"""
+        
+        if (len(self.clonedRobotHandles) <= 0):
+            return;
+
+        logging.info("Removing %d robots from the scene" % len(self.clonedRobotHandles))
+        for handle in self.clonedRobotHandles: 
+            vrep.simxRemoveModel(self.__clientID, handle, vrep.simx_opmode_oneshot_wait)
+    # end removeRobots()
+    
     def close(self):
         """Closes the connection with V-REP """
 
         # Now close the connection with V-REP:
         vrep.simxFinish(self.__clientID)
         logging.info("Connection closed")
+    #end close()
 #end class VrepBridge 
 
 
@@ -134,7 +187,10 @@ if __name__ == "__main__":
 
     bridge = VrepBridge()
 
-    bridge.getState()
-    bridge.setState(Motion.forward, [0, 2, 0])
+    #bridge.getState()
+    #bridge.setState(Motion.forward, [0, 2, 0])
+    bridge.spawnRobots(nr = 15)
+    time.sleep(3)
+    bridge.removeRobots()
 
     bridge.close()
