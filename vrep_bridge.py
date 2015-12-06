@@ -13,6 +13,27 @@ class SignalType(IntEnum):
     setState = 2
 #end class SignalType
 
+class IndexSignalSend(IntEnum):
+
+    """Enumeration of outgoing signal array indexes"""
+
+    type   = 0
+    uid    = 1
+    motion = 2
+    led_r  = 3
+    led_g  = 4
+    led_b  = 5
+# end class IndexSignalSend
+
+class IndexSignalReceive(IntEnum):
+
+    """Enumeration of incoming signal array indexes"""
+
+    uid           = 0
+    distance      = 1
+    ambient_light = 2
+# end class IndexSignalSend
+
 class Motion():
 
     """Enumeration of motion types accepted by Kilobot"""
@@ -63,12 +84,12 @@ class VrepBridge():
             result,string=vrep.simxReadStringStream(self.__clientID, 'reply_signal', vrep.simx_opmode_streaming)
             #result,string=vrep.simxGetStringSignal(self.__clientID, 'reply_signal', vrep.simx_opmode_streaming)
             if (result == vrep.simx_return_ok and len(string) > 0):
-                logging.debug("received %s" % string)
+                #logging.debug("received %s" % string)
                 return string
             #string = str(string, 'utf-8')
             #if (result==vrep.simx_return_ok):
 
-            time.sleep(0.1)
+            #time.sleep(0.1)
     #end __waitForCmdReply()
 
     def sendSignal(self, params):
@@ -85,37 +106,56 @@ class VrepBridge():
         packedData=vrep.simxPackInts(params)
         
         vrep.simxWriteStringStream(self.__clientID, "signal", packedData, vrep.simx_opmode_oneshot) 
-        
+        logging.debug("Sent %s" % params)
         reply = self.__waitForCmdReply()
-        logging.debug("Reply = %s", reply)
+        #logging.debug("Reply = %s", reply)
 
         return reply
     #end sendSignal
 
-    def getState(self):
+    def getState(self, uid):
         """Return the current state of the kilobot, under the form of a structured dictionary
+        :uid: the target kilobot's unique id
         :returns: structured dictonary that represents the state of the robot
         {
+            uid : the target kilobot's unique id
             distance : [(id1, val1), ...]
             light : (val_now, val_previous)
         }
 
         """
-        recv = vrep.simxUnpackInts(self.sendSignal([SignalType.getState]))
+        send = [-1] * 2 # initialize an array with -1
+        send[IndexSignalSend.type] = SignalType.getState
+        send[IndexSignalSend.uid] = uid
+
+        recv = vrep.simxUnpackInts(self.sendSignal(send))
         logging.debug("Received %s" % recv)
 
-        return {'distance' : recv[0], 'light' : recv[1]}
+        return {
+                'uid' : recv[IndexSignalReceive.uid],
+                'distance' : recv[IndexSignalReceive.distance],
+                'light' : recv[IndexSignalReceive.ambient_light]}
     #end getState()
 
-    def setState(self, motion, light):
+    def setState(self, uid, motion, light):
         """Set a current state for the end-effectors of the Kilobot (Motors and RGB-led)
 
+        :uid: the target kilobot's unique id
         :motion: one of Motion(enum) values  
         :light: [r, g, b] list with values from [0-3] interval
         :returns: TODO
 
         """
-        recv = self.sendSignal([SignalType.setState, motion] + light)
+        send = [-1] * 6
+        send[IndexSignalSend.type] = SignalType.setState
+        send[IndexSignalSend.uid] = uid
+        send[IndexSignalSend.motion] = motion
+        send[IndexSignalSend.led_r] = light[0]
+        send[IndexSignalSend.led_g] = light[1]
+        send[IndexSignalSend.led_b] = light[2]
+
+        #recv = self.sendSignal(send)
+        recv = vrep.simxUnpackInts(self.sendSignal(send))
         logging.debug("Received %s" % recv)
 
     def spawnRobots(self, sourceRobotName = "Kilobot#", nr = 2, clonePosRotFunction = getClonePosRot_ox_plus):
@@ -139,8 +179,10 @@ class VrepBridge():
             logging.debug("copy obj handle = %s" % self.clonedRobotHandles[-1])
             
             position, rotation = clonePosRotFunction(i)
+            # move the cloned robot by 'position' units away from the source robot
             vrep.simxSetObjectPosition(self.__clientID, self.clonedRobotHandles[-1], sourceHandle, position, vrep.simx_opmode_oneshot_wait)
-            vrep.simxSetObjectOrientation(self.__clientID, self.clonedRobotHandles[-1], sourceHandle, rotation, vrep.simx_opmode_oneshot_wait)
+            # rotate the cloned robot around it's center by 'rotation' euler angles
+            vrep.simxSetObjectOrientation(self.__clientID, self.clonedRobotHandles[-1], self.clonedRobotHandles[-1], rotation, vrep.simx_opmode_oneshot_wait)
     # end spawnRobots()
    
     def removeRobots(self):
@@ -187,10 +229,18 @@ if __name__ == "__main__":
 
     bridge = VrepBridge()
 
-    #bridge.getState()
-    #bridge.setState(Motion.forward, [0, 2, 0])
-    bridge.spawnRobots(nr = 15)
-    time.sleep(3)
+    bridge.spawnRobots(nr = 2)
+
+    bridge.getState(0)
+    bridge.setState(0, Motion.forward, [0, 2, 0])
+
+    bridge.getState(1)
+    bridge.setState(1, Motion.left, [2, 0, 0])
+
+    bridge.getState(2)
+    bridge.setState(2, Motion.right, [0, 0, 2])
+
+    time.sleep(5)
     bridge.removeRobots()
 
     bridge.close()
