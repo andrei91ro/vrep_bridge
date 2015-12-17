@@ -29,9 +29,8 @@ class IndexSignalReceive(IntEnum):
 
     """Enumeration of incoming signal array indexes"""
 
-    uid           = 0
-    distance      = 1
-    ambient_light = 2
+    uid             = 0
+    ambient_light   = 1
 # end class IndexSignalSend
 
 class Motion():
@@ -43,6 +42,16 @@ class Motion():
     left = 2
     right = 3
 #end class Motion
+
+class Led_rgb():
+
+    """Enumeration of colors (returned as [r, g, b]) accepted by Kilobot"""
+
+    red = [3, 0, 0]
+    green = [0, 3, 0]
+    blue = [0, 0, 3]
+    # TODO add all other
+# end class Led_rgb
 
 def getClonePosRot_ox_plus(stepNr):
     """Return a position[3], rotation[3] pair for a linear displacement on the positive X axis of
@@ -119,8 +128,8 @@ class VrepBridge():
         :returns: structured dictonary that represents the state of the robot
         {
             uid : the target kilobot's unique id
-            distance : [(id1, val1), ...]
             light : (val_now, val_previous)
+            distances : {robot_uid: current_distance}
         }
 
         """
@@ -128,13 +137,30 @@ class VrepBridge():
         send[IndexSignalSend.type] = SignalType.getState
         send[IndexSignalSend.uid] = uid
 
-        recv = vrep.simxUnpackInts(self.sendSignal(send))
-        logging.debug("Received %s" % recv)
+        logging.debug("getState() robot_uid = %d" % uid)
+
+        # get a reply of the form [uid, ambient_light] | distance_keys | distance_values
+        recv = self.sendSignal(send)
+        #logging.debug("Received %s" % recv)
+        recv = recv.split(b'|')
+        for i in range(len(recv)):
+            # unpack ints in place
+            recv[i] = vrep.simxUnpackInts(recv[i])
+            logging.debug("recv[%d] = %s" % (i, recv[i]))
+        
+        if (recv[0][IndexSignalReceive.uid] != uid):
+            logging.critical("received the state from the wrong robot (req.uid = %d, response.uid = %d)" % (uid, recv[0][IndexSignalReceive.uid]))
+            exit(1)
+
+        # construct the distances dictionary (robot_uid: current_distance)
+        distances = {recv[1][i]: recv[2][i] for i in range(len(recv[1]))}
+        # remove distance from myself, as it is always 0 and is not needed
+        del distances[uid]
 
         return {
-                'uid' : recv[IndexSignalReceive.uid],
-                'distance' : recv[IndexSignalReceive.distance],
-                'light' : recv[IndexSignalReceive.ambient_light]}
+                'uid' : recv[0][IndexSignalReceive.uid],
+                'light' : recv[0][IndexSignalReceive.ambient_light],
+                'distances' : distances}
     #end getState()
 
     def setState(self, uid, motion, light):
