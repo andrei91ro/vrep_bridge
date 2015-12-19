@@ -33,24 +33,29 @@ class IndexSignalReceive(IntEnum):
     ambient_light   = 1
 # end class IndexSignalSend
 
-class Motion():
+class Motion(IntEnum):
 
     """Enumeration of motion types accepted by Kilobot"""
     
-    stop = 0
+    stop    = 0
     forward = 1
-    left = 2
-    right = 3
+    left    = 2
+    right   = 3
 #end class Motion
 
 class Led_rgb():
 
     """Enumeration of colors (returned as [r, g, b]) accepted by Kilobot"""
 
-    red = [3, 0, 0]
-    green = [0, 3, 0]
-    blue = [0, 0, 3]
-    # TODO add all other
+    red       = [3, 0, 0]
+    green     = [0, 3, 0]
+    blue      = [0, 0, 3]
+    white     = [3, 3, 3]
+    turquoise = [0, 3, 1]
+    orange    = [3, 3, 0]
+    magenta   = [3, 0, 3]
+    cyan      = [0, 3, 3]
+    yellow    = [3, 3, 0]
 # end class Led_rgb
 
 def getClonePosRot_ox_plus(stepNr):
@@ -125,7 +130,7 @@ class VrepBridge():
     def getState(self, uid):
         """Return the current state of the kilobot, under the form of a structured dictionary
         :uid: the target kilobot's unique id
-        :returns: structured dictonary that represents the state of the robot
+        :returns: structured dictionary that represents the state of the robot
         {
             uid : the target kilobot's unique id
             light : (val_now, val_previous)
