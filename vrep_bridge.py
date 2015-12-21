@@ -4,6 +4,8 @@ import colorlog # colors log output
 from enum import IntEnum # for enumerations (with int value) (enum from C)
 #import ctypes
 import time # for time.sleep()
+import numpy # for matrix multiplication (rotation matrix)
+from math import sin, cos # for rotation matrix
 
 class SignalType(IntEnum):
 
@@ -58,17 +60,39 @@ class Led_rgb():
     yellow    = [3, 3, 0]
 # end class Led_rgb
 
-def getClonePosRot_ox_plus(stepNr):
-    """Return a position[3], rotation[3] pair for a linear displacement on the positive X axis of
-    the cloned robots. 
+class SpawnType(IntEnum):
 
-    :stepNr: the current (in the interval [0; n-1], where n = nr robot clones) iteration step in the cloning process of the source robot
+    """Enumeration of spawn dispersion types"""
+
+    ox_plus      = 1
+    oy_plus      = 2
+    circular     = 3
+# end class SpawnType
+
+def getClonePosRot(stepNr, nr, spawnType = SpawnType.ox_plus):
+    """Return a position[3], rotation[3] pair for the selected spawn type and current step 
+
+    :stepNr: the current (in the interval [0; nr-1], where nr = nr robots) iteration step in the cloning process of the source robot
+    :nr: total number of robots (including the original robot)
     :returns: position[3] (is applied relative to the source robot's position)
     :returns: rotation[3] (in Euler angles, applied relative to the clone's axis)
 
     """
-    position = [(stepNr + 1) * 0.05, 0, 0]
-    rotation = [0, 0, 0]
+    position = [0] * 3
+    rotation = [0] * 3
+
+    if (spawnType == SpawnType.ox_plus):
+        position = [(stepNr + 1) * 0.05, 0, 0]
+        rotation = [0, 0, 0]
+    elif (spawnType == SpawnType.oy_plus):
+        position = [0, (stepNr + 1) * 0.05, 0]
+        rotation = [0, 0, 0]
+    elif (spawnType == SpawnType.circular):
+        angle = numpy.radians((stepNr / (nr)) * 360)
+        rot_matrix = numpy.array([  [cos(angle), -sin(angle)], [sin(angle), cos(angle)] ])
+        pos = numpy.dot(numpy.array([0, 0.061 * (nr / 10)]), rot_matrix)
+        position = list(pos) + [0]
+        rotation = [0, 0, 0]
 
     return position, rotation
 # end getClonePosRot()
@@ -189,7 +213,7 @@ class VrepBridge():
         recv = vrep.simxUnpackInts(self.sendSignal(send))
         logging.debug("Received %s" % recv)
 
-    def spawnRobots(self, sourceRobotName = "Kilobot#", nr = 2, clonePosRotFunction = getClonePosRot_ox_plus):
+    def spawnRobots(self, sourceRobotName = "Kilobot#", nr = 2, spawnType = SpawnType.ox_plus):
         """Spawns nr robots in the current scene by copy-pasting the source robot the required number of times
         The cloned robots are placed acording to the clonePosRotFunction (see getClonePosRot_ox_plus() for an example)
 
@@ -209,7 +233,7 @@ class VrepBridge():
             self.clonedRobotHandles.append(auxhandles[0])
             logging.debug("copy obj handle = %s" % self.clonedRobotHandles[-1])
             
-            position, rotation = clonePosRotFunction(i)
+            position, rotation = getClonePosRot(i, nr, spawnType)
             # move the cloned robot by 'position' units away from the source robot
             vrep.simxSetObjectPosition(self.__clientID, self.clonedRobotHandles[-1], sourceHandle, position, vrep.simx_opmode_oneshot_wait)
             # rotate the cloned robot around it's center by 'rotation' euler angles
@@ -260,7 +284,7 @@ if __name__ == "__main__":
 
     bridge = VrepBridge()
 
-    bridge.spawnRobots(nr = 2)
+    bridge.spawnRobots(nr = 10, spawnType = SpawnType.circular)
 
     bridge.getState(0)
     bridge.setState(0, Motion.forward, [0, 2, 0])
