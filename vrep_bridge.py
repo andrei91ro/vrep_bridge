@@ -69,6 +69,13 @@ class SpawnType(IntEnum):
     circular     = 3
 # end class SpawnType
 
+# dictionary of SpawnTypes (used for lulu_kilobot config parsing)
+SpawnTypeNames = {
+    "ox_plus": SpawnType.ox_plus,
+    "oy_plus": SpawnType.oy_plus,
+    "circular": SpawnType.circular
+}
+
 def getClonePosRot(stepNr, nr, spawnType = SpawnType.ox_plus):
     """Return a position[3], rotation[3] pair for the selected spawn type and current step 
 
