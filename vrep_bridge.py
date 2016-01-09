@@ -11,8 +11,9 @@ class SignalType(IntEnum):
 
     """Enumeration of signal types"""
 
-    getState = 1
-    setState = 2
+    getState         = 1
+    setState         = 2
+    getKnownRobotIds = 3
 #end class SignalType
 
 class IndexSignalSend(IntEnum):
@@ -146,10 +147,10 @@ class VrepBridge():
         """
 
         #returnCode = vrep.simxWriteStringStream(self.__clientID, 'signal', 'abc', vrep.simx_opmode_oneshot)
-        
+
         #packedData=vrep.simxPackInts([1, 2, 3])
         packedData=vrep.simxPackInts(params)
-        
+
         vrep.simxWriteStringStream(self.__clientID, "signal", packedData, vrep.simx_opmode_oneshot) 
         logging.debug("Sent %s" % params)
         reply = self.__waitForCmdReply()
@@ -183,7 +184,7 @@ class VrepBridge():
             # unpack ints in place
             recv[i] = vrep.simxUnpackInts(recv[i])
             logging.debug("recv[%d] = %s" % (i, recv[i]))
-        
+
         if (recv[0][IndexSignalReceive.uid] != uid):
             logging.critical("received the state from the wrong robot (req.uid = %d, response.uid = %d)" % (uid, recv[0][IndexSignalReceive.uid]))
             exit(1)
@@ -197,7 +198,38 @@ class VrepBridge():
                 'uid' : recv[0][IndexSignalReceive.uid],
                 'light' : recv[0][IndexSignalReceive.ambient_light],
                 'distances' : distances}
-    #end getState()
+        #end getState()
+
+    def getKnownRobotIds(self, uid):
+        """Return a list of IDs known (safe) to the target robot
+        :uid: the target kilobot's unique id
+        :returns: list of known robot IDs"""
+
+        send = [-1] * 2 # initialize an array with -1
+        send[IndexSignalSend.type] = SignalType.getKnownRobotIds
+        send[IndexSignalSend.uid] = uid
+
+        logging.debug("getKnownRobotIds() robot_uid = %d" % uid)
+
+        # get a reply of the form "uid | distance_keys | distance_values"
+        recv = self.sendSignal(send)
+        #logging.debug("Received %s" % recv)
+        recv = recv.split(b'|')
+        recv[IndexSignalReceive.uid] = int(recv[IndexSignalReceive.uid]) # convert the sender's id from string to int
+        # unpack id ints in place
+        recv[1] = vrep.simxUnpackInts(recv[1])
+        logging.debug("recv[%d] = %s" % (1, recv[1]))
+
+        if (recv[IndexSignalReceive.uid] != uid):
+            logging.critical("received the state from the wrong robot (req.uid = %d, response.uid = %d)" % (uid, recv[IndexSignalReceive.uid]))
+            exit(1)
+
+        # remove the requested robot's uid from the list
+        recv[1].remove(uid)
+        # return the known ids list
+        return recv[1]
+
+    #end getKnownRobotIds()
 
     def setState(self, uid, motion, light):
         """Set a current state for the end-effectors of the Kilobot (Motors and RGB-led)
@@ -231,25 +263,25 @@ class VrepBridge():
         """
         returnCode, sourceHandle = vrep.simxGetObjectHandle(self.__clientID, sourceRobotName, vrep.simx_opmode_oneshot_wait)
         logging.debug("Source obj handle = %d" % sourceHandle)
-        
+
         logging.info("Spawning %d clones of %s source robot" % (nr, sourceRobotName))
         for i in range(nr):
             logging.debug("Spawning robot nr %d" % i)
-            
+
             returnCode, auxhandles = vrep.simxCopyPasteObjects(self.__clientID, [sourceHandle], vrep.simx_opmode_oneshot_wait)
             self.clonedRobotHandles.append(auxhandles[0])
             logging.debug("copy obj handle = %s" % self.clonedRobotHandles[-1])
-            
+
             position, rotation = getClonePosRot(i, nr, spawnType)
             # move the cloned robot by 'position' units away from the source robot
             vrep.simxSetObjectPosition(self.__clientID, self.clonedRobotHandles[-1], sourceHandle, position, vrep.simx_opmode_oneshot_wait)
             # rotate the cloned robot around it's center by 'rotation' euler angles
             vrep.simxSetObjectOrientation(self.__clientID, self.clonedRobotHandles[-1], self.clonedRobotHandles[-1], rotation, vrep.simx_opmode_oneshot_wait)
     # end spawnRobots()
-   
+
     def removeRobots(self):
         """Removes the robots previously created with spawnRobots() from the current V-REP scene"""
-        
+
         if (len(self.clonedRobotHandles) <= 0):
             return;
 
@@ -257,7 +289,7 @@ class VrepBridge():
         for handle in self.clonedRobotHandles: 
             vrep.simxRemoveModel(self.__clientID, handle, vrep.simx_opmode_oneshot_wait)
     # end removeRobots()
-    
+
     def close(self):
         """Closes the connection with V-REP """
 
@@ -276,22 +308,25 @@ if __name__ == "__main__":
             datefmt=None,
             reset=True,
             log_colors={
-                    'DEBUG':    'cyan',
-                    'INFO':     'green',
-                    'WARNING':  'yellow',
-                    'ERROR':    'red',
-                    'CRITICAL': 'red,bg_white',
-            },
+                'DEBUG':    'cyan',
+                'INFO':     'green',
+                'WARNING':  'yellow',
+                'ERROR':    'red',
+                'CRITICAL': 'red,bg_white',
+                },
             secondary_log_colors={},
             style='%'
-    )
+            )
     colorlog.basicConfig(level = logging.DEBUG)
     stream = colorlog.root.handlers[0]
     stream.setFormatter(formatter);
 
     bridge = VrepBridge()
 
-    bridge.spawnRobots(nr = 10, spawnType = SpawnType.circular)
+    bridge.spawnRobots(nr = 6, spawnType = SpawnType.circular)
+
+    input("Press Enter to continue at least 2 seconds after starting the simulation in V-REP and pressing Run in KilobotController")
+    print(bridge.getKnownRobotIds(0))
 
     bridge.getState(0)
     bridge.setState(0, Motion.forward, [0, 2, 0])
